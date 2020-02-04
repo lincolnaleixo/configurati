@@ -71,7 +71,6 @@ class Config {
 		}
 
 		const today = new Date()
-		if (!fs.existsSync(this.tempDir)) fs.mkdirSync(this.tempDir)
 
 		fs.writeFileSync(path.join(this.tempDir, 'cache'), today.getTime())
 		fs.writeFileSync(path.join(this.tempDir, 'config.cached.json'), JSON.stringify(config))
@@ -83,6 +82,17 @@ class Config {
 	isCacheValid() {
 
 		const today = new Date()
+		const cacheFile = path.join(this.tempDir, 'cache')
+
+		if (!fs.existsSync(this.tempDir)) {
+
+			fs.mkdirSync(this.tempDir)
+
+			return false
+
+		}
+
+		if (!fs.existsSync(cacheFile)) return false
 
 		const lastSavedTime = fs.readFileSync(path.join(this.tempDir, 'cache'))
 
