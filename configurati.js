@@ -2,6 +2,7 @@ const googleapis = require('googleapis')
 const fs = require('fs')
 const path = require('path')
 const Google = require('./google.js')
+const config = require('./config.js')
 
 class Config {
 
@@ -19,7 +20,7 @@ class Config {
 			this.sheetId = options.sheetId
 			this.google = new Google(options.clientSecretPath, options.gdriveTokenPath)
 			this.cacheMinutes = options.cacheMinutes
-			this.tempDir = './tmp'
+			this.cacheDir = config.cacheFolder
 
 		}
 
@@ -30,7 +31,7 @@ class Config {
 		if (this.isCacheValid()) {
 
 			console.log('Config cache is valid')
-			const config = fs.readFileSync(path.join(this.tempDir, 'config.cached.json'))
+			const config = fs.readFileSync(path.join(this.cacheDir, 'config.cached.json'))
 
 			return JSON.parse(config)
 
@@ -72,8 +73,8 @@ class Config {
 
 		const today = new Date()
 
-		fs.writeFileSync(path.join(this.tempDir, 'cache'), today.getTime())
-		fs.writeFileSync(path.join(this.tempDir, 'config.cached.json'), JSON.stringify(config))
+		fs.writeFileSync(path.join(this.cacheDir, 'cache'), today.getTime())
+		fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(config))
 
 		return config
 
@@ -82,11 +83,11 @@ class Config {
 	isCacheValid() {
 
 		const today = new Date()
-		const cacheFile = path.join(this.tempDir, 'cache')
+		const cacheFile = path.join(this.cacheDir, 'cache')
 
-		if (!fs.existsSync(this.tempDir)) {
+		if (!fs.existsSync(this.cacheDir)) {
 
-			fs.mkdirSync(this.tempDir)
+			fs.mkdirSync(this.cacheDir)
 
 			return false
 
@@ -94,7 +95,7 @@ class Config {
 
 		if (!fs.existsSync(cacheFile)) return false
 
-		const lastSavedTime = fs.readFileSync(path.join(this.tempDir, 'cache'))
+		const lastSavedTime = fs.readFileSync(path.join(this.cacheDir, 'cache'))
 
 		const diffTime = Math.abs(today - lastSavedTime)
 		const diffMinutes = Math.ceil(diffTime / (1000 * 60))
