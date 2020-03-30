@@ -7,8 +7,6 @@
     "node": ">=10"
   },
   "dependencies": {
-    "config.ini": "^0.0.60",
-    "csvjson": "^5.1.0",
     "googleapis": "^48.0.0",
     "jsonfile": "^6.0.1"
   },
