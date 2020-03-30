@@ -2,7 +2,7 @@ const googleapis = require('googleapis')
 const fs = require('fs')
 const path = require('path')
 const Google = require('./google.js')
-const config = require('./config.js')
+const defaultConfig = require('./config.js')
 
 class Config {
 
@@ -20,63 +20,78 @@ class Config {
 			this.sheetId = options.sheetId
 			this.google = new Google(options.clientSecretPath, options.gdriveTokenPath)
 			this.cacheMinutes = options.cacheMinutes
-			this.cacheDir = config.cacheFolder
+			this.cacheDir = defaultConfig.cacheFolder
 
 		}
 
 	}
 
-	async get() {
+	convertToJson(values) {
 
-		if (this.isCacheValid()) {
+		const jsonValues = {}
+		let configKey = ''
 
-			console.log('Config cache is valid')
-			const config = fs.readFileSync(path.join(this.cacheDir, 'config.cached.json'))
+		for (const row of values) {
 
-			return JSON.parse(config)
+			if (row.length === 0) continue
 
-		}
+			if (row.length === 1) {
 
-		console.log('No config cache')
-
-		const config = {}
-		const auth =	await this.google.selectAuth()
-		const request = {
-			spreadsheetId: this.spreadsheetId,
-			range: `${this.sheetId}!A1:Z300`,
-			auth,
-		}
-		const response = await this.sheets.spreadsheets.values.get(request)
-		const { values } = response.data
-		let configCategory
-
-		for (let i = 0; i < values.length; i++) {
-
-			const rows = values[i]
-
-			if (rows.length === 0) { continue }
-
-			if (rows[0].indexOf('[') > -1 && rows[0].indexOf(']') > -1) {
-
-				configCategory = rows[0]
+				configKey = row[0]
 					.replace('[', '')
 					.replace(']', '')
-				config[configCategory] = {}
+				jsonValues[configKey] = {}
 
-			} else if (rows[1]) {
+				continue
 
-				config[configCategory][rows[0]] = rows[1]
+			}
+
+			if (row.length > 1) {
+
+				const attributeName = row[0]
+				const attributeValue = row[1]
+				jsonValues[configKey][attributeName] = attributeValue
 
 			}
 
 		}
 
-		const today = new Date()
+		return jsonValues
 
-		fs.writeFileSync(path.join(this.cacheDir, 'cache'), today.getTime())
-		fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(config))
+	}
 
-		return config
+	convertJsonToArray(jsonValues) {
+
+		const firstColumnValues = []
+		const secondColumnValues = []
+		let isFirstColumn = true
+
+		for (const categoryKey in jsonValues) {
+
+			if (!isFirstColumn) {
+
+				firstColumnValues.push('')
+				secondColumnValues.push('')
+
+			}
+			isFirstColumn = false
+
+			firstColumnValues.push(`[${categoryKey}]`)
+			secondColumnValues.push('')
+
+			for (const attributeName in jsonValues[categoryKey]) {
+
+				firstColumnValues.push(attributeName)
+				secondColumnValues.push(jsonValues[categoryKey][attributeName])
+
+			}
+
+		}
+
+		return {
+			firstColumnValues,
+			secondColumnValues,
+		}
 
 	}
 
@@ -101,6 +116,83 @@ class Config {
 		const diffMinutes = Math.ceil(diffTime / (1000 * 60))
 
 		return this.cacheMinutes > diffMinutes
+
+	}
+
+	async get() {
+
+		let config = {}
+
+		if (this.isCacheValid()) {
+
+			console.log('Config cache is valid')
+			config = fs.readFileSync(path.join(this.cacheDir, 'config.cached.json'))
+
+			return JSON.parse(config)
+
+		}
+
+		console.log('No config cache')
+
+		const auth =	await this.google.selectAuth()
+		const request = {
+			spreadsheetId: this.spreadsheetId,
+			range: `${this.sheetId}!A1:Z300`,
+			auth,
+		}
+		const response = await this.sheets.spreadsheets.values.get(request)
+		const { values } = response.data
+
+		const jsonData = this.convertToJson(values)
+
+		const today = new Date()
+
+		fs.writeFileSync(path.join(this.cacheDir, 'cache'), today.getTime())
+		fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(jsonData))
+
+		return jsonData
+
+	}
+
+	async set(config) {
+
+		const auth =	await this.google.selectAuth()
+		const arrayValues = this.convertJsonToArray(config)
+
+		let request = {
+			spreadsheetId: this.spreadsheetId,
+			range: 'A1',
+			valueInputOption: 'USER_ENTERED',
+			resource: {
+				values: [ arrayValues.firstColumnValues ],
+				majorDimension: 'COLUMNS',
+			},
+			auth,
+		}
+
+		await this.sheets.spreadsheets.values.update(request)
+
+		request = {
+			spreadsheetId: this.spreadsheetId,
+			range: 'B1',
+			valueInputOption: 'USER_ENTERED',
+			resource: {
+				values: [ arrayValues.secondColumnValues ],
+				majorDimension: 'COLUMNS',
+			},
+			auth,
+		}
+
+		await this.sheets.spreadsheets.values.update(request)
+
+		console.log('Config saved')
+
+		// const { values } = response.data
+
+		// const today = new Date()
+
+		// fs.writeFileSync(path.join(this.cacheDir, 'cache'), today.getTime())
+		// fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(config))
 
 	}
 
