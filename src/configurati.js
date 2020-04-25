@@ -17,7 +17,6 @@ class Config {
 	 */
 	constructor(type, options) {
 		if (process.env.NODE_ENV === undefined) process.env.NODE_ENV = 'PRODUCTION'
-		// TabNine::config_dir / Users / robot / Library / Preferences / TabNine
 		this.logger = new Logger('configurati')
 		this.logger = this.logger.get()
 
@@ -159,7 +158,7 @@ class Config {
 
 			fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(cacheInfo))
 
-			return jsonData.data
+			return cacheInfo.data
 		}
 
 		this.logger.debug('Config cache is valid')
