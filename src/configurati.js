@@ -13,6 +13,8 @@ class Config {
 	 */
 	constructor(type, options) {
 
+		if (process.env.NODE_ENV === undefined) process.env.NODE_ENV = "PRODUCTION"
+
 		if (type === 'gsheets') {
 
 			this.spreadsheetId = options.spreadsheetId
