@@ -55,6 +55,7 @@ class Config {
 					jsonValues[categoryName][subCategoryName] = { }
 				} else {
 					jsonValues[categoryName] = {}
+					subCategoryName = ''
 				}
 
 				continue
