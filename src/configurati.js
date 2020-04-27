@@ -51,11 +51,10 @@ class Config {
 
 				if (categoryName.indexOf('.') > -1) {
 					[ categoryName, subCategoryName ] = categoryName.split('.')
-					jsonValues[categoryName] = {}
 					jsonValues[categoryName][subCategoryName] = { }
 				} else {
-					jsonValues[categoryName] = {}
 					subCategoryName = ''
+					jsonValues[categoryName] = {}
 				}
 
 				continue
