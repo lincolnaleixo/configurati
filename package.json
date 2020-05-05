@@ -4,12 +4,13 @@
   "main": "src/configurati.js",
   "license": "MIT",
   "engines": {
-    "node": ">=10"
+    "node": ">=12"
   },
   "dependencies": {
     "github-api": "^3.3.0",
     "googleapis": "^48.0.0",
     "jsonfile": "^6.0.1",
+    "logering": "^0.0.2",
     "moment-timezone": "^0.5.28",
     "node-fetch": "^2.6.0",
     "winston": "^3.2.1"
