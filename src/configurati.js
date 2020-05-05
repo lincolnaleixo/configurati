@@ -1,9 +1,15 @@
+/* eslint-disable complexity */
+/* eslint-disable prefer-destructuring */
+/* eslint-disable require-jsdoc */
 const googleapis = require('googleapis')
 const fs = require('fs')
 const path = require('path')
+const GitHub = require('github-api')
+const fetch = require('node-fetch')
+const Logger = require('logering')
 const Google = require('./google.js')
 const defaultConfig = require('../config/config.js')
-const Logger = require('../lib/logger.js')
+const Cryptologist = require('../lib/cryptologist')
 
 /**
  * Config class that sets defaults for configurati
@@ -19,23 +25,29 @@ class Config {
 		if (process.env.NODE_ENV === undefined) process.env.NODE_ENV = 'PRODUCTION'
 		this.logger = new Logger('configurati')
 		this.logger = this.logger.get()
+		this.crypto = new Cryptologist()
+		this.type = type
+
+		this.cacheMinutes = options.cacheMinutes
+		this.cacheDir = defaultConfig.cacheFolder
 
 		if (type === 'gsheets') {
 			this.spreadsheetId = options.spreadsheetId
 			this.sheets = googleapis.google.sheets('v4')
 			this.sheetId = options.sheetId
 			this.google = new Google(options.clientSecretPath, options.gdriveTokenPath)
-			this.cacheMinutes = options.cacheMinutes
-			this.cacheDir = defaultConfig.cacheFolder
+		} else if (type === 'githubRepo') {
+			this.token = options.token
+			this.username = options.username
+			this.repositoryName = options.repositoryName
 		}
 	}
 
-	// TODO migrar para cawer
 	/**
-	 * Convert to JSON
+	 * Convert google drive document to JSON
 	 * @param {Object} values
 	 */
-	convertToJson(values) {
+	convertGdriveToJson(values) {
 		const jsonValues = {}
 		let categoryName = ''
 		let subCategoryName = ''
@@ -73,12 +85,51 @@ class Config {
 		return jsonValues
 	}
 
-	// TODO migrar para cawer
+	/**
+	 *
+	 * @param {string} rawConfig values from github repo content
+	 */
+	convertGithubRepoToJson(rawConfig) {
+		const jsonValues = {}
+		let categoryName = ''
+		let subCategoryName = ''
+
+		for (const line of rawConfig.split('\n')) {
+			if (line.length === 0) continue
+
+			// is category key row
+			if (line[0] === '[' && line[line.length - 1] === ']') {
+				categoryName = line.replace('[', '').replace(']', '')
+
+				if (categoryName.indexOf('.') > -1) {
+					[ categoryName, subCategoryName ] = categoryName.split('.')
+					jsonValues[categoryName][subCategoryName] = { }
+				} else {
+					subCategoryName = ''
+					jsonValues[categoryName] = {}
+				}
+
+				continue
+			}
+
+			// is attr + value row
+			if (line.length > 1) {
+				const attributeName = line.split('=')[0]
+				const attributeValue = line.split('=')[1]
+				if (subCategoryName !== '') {
+					jsonValues[categoryName][subCategoryName][attributeName] = attributeValue
+				} else { jsonValues[categoryName][attributeName] = attributeValue }
+			}
+		}
+
+		return jsonValues
+	}
+
 	/**
 	 * Convert Json to array method
 	 * @param {Object} jsonValues
 	 */
-	convertJsonToArray(jsonValues) {
+	convertJsonToGdrive(jsonValues) {
 		const firstColumnValues = []
 		const secondColumnValues = []
 		let isFirstColumn = true
@@ -105,13 +156,12 @@ class Config {
 		}
 	}
 
-	// TODO migrar para cawer
 	/**
 	 * Check if the cached is valid. If exists and if it's not expired
 	 */
 	isCacheValid() {
 		const today = new Date()
-		const configCachedFile = path.join(this.cacheDir, 'config.cached.json')
+		const configCachedFile = path.join(this.cacheDir, 'config.cached')
 
 		if (!fs.existsSync(this.cacheDir)) {
 			fs.mkdirSync(this.cacheDir)
@@ -125,22 +175,58 @@ class Config {
 			return false
 		}
 
-		const lastSavedTime = JSON.parse(fs.readFileSync(configCachedFile)).cacheTime
+		const encryptedConfig = fs.readFileSync(configCachedFile).toString()
+		const decryptedConfig = this.crypto.decrypt(encryptedConfig)
+		const lastSavedTime = JSON.parse(decryptedConfig).cacheTime
 		const diffTime = Math.abs(today - lastSavedTime)
 		const diffMinutes = Math.ceil(diffTime / (1000 * 60))
 
 		return this.cacheMinutes > diffMinutes
 	}
 
-	/**
-	 * Get config data
-	 */
-	async get() {
-		let config = {}
+	get() {
+		if (this.type === 'githubRepo') return this.getConfigFromGithubRepo()
+		if (this.type === 'gsheets') return this.getConfigFromGSheets()
 
+		this.logger.error('No type specified')
+
+		return {}
+	}
+
+	async getConfigFromGithubRepo() {
 		if (!this.isCacheValid()) {
 			this.logger.debug('Warn: No config cache, refreshing it')
 
+			const cacheInfo = {}
+			const gh = new GitHub({ token: this.token })
+			const contents = await gh.getRepo(this.username, this.repositoryName)
+				.getContents()
+			const fileUrl = contents.data[0].download_url
+			const response = await fetch(fileUrl)
+			const rawConfig = await response.text()
+			const jsonData = this.convertGithubRepoToJson(rawConfig)
+			const today = new Date()
+
+			cacheInfo.cacheTime = today.getTime().toString()
+			cacheInfo.data = jsonData
+			const toEncrypt = JSON.stringify(cacheInfo)
+			const encryptedConfig = this.crypto.encrypt(toEncrypt)
+			fs.writeFileSync(path.join(this.cacheDir, 'config.cached'),
+				encryptedConfig)
+
+			return cacheInfo.data
+		}
+
+		this.logger.debug('Config cache is valid')
+		const encryptedConfig = fs.readFileSync(path.join(this.cacheDir, 'config.cached')).toString()
+		const decryptedConfig = this.crypto.decrypt(encryptedConfig)
+
+		return JSON.parse(decryptedConfig).data
+	}
+
+	async getConfigFromGSheets() {
+		if (!this.isCacheValid()) {
+			this.logger.debug('Warn: No config cache, refreshing it')
 			const auth =	await this.google.selectAuth()
 			const request = {
 				spreadsheetId: this.spreadsheetId,
@@ -148,23 +234,26 @@ class Config {
 				auth,
 			}
 			const response = await this.sheets.spreadsheets.values.get(request)
-			const { values } = response.data
-			const jsonData = this.convertToJson(values)
+			const rawConfig = response.data.values
+			const jsonData = this.convertGdriveToJson(rawConfig)
 			const today = new Date()
 			const cacheInfo = {}
 			cacheInfo.cacheTime = today.getTime()
 				.toString()
 			cacheInfo.data = jsonData
-
-			fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(cacheInfo))
+			const toEncrypt = JSON.stringify(cacheInfo)
+			const encryptedConfig = this.crypto.encrypt(toEncrypt)
+			fs.writeFileSync(path.join(this.cacheDir, 'config.cached'),
+				encryptedConfig)
 
 			return cacheInfo.data
 		}
 
 		this.logger.debug('Config cache is valid')
-		config = fs.readFileSync(path.join(this.cacheDir, 'config.cached.json'))
+		const encryptedConfig = fs.readFileSync(path.join(this.cacheDir, 'config.cached')).toString()
+		const decryptedConfig = this.crypto.decrypt(encryptedConfig)
 
-		return JSON.parse(config).data
+		return JSON.parse(decryptedConfig).data
 	}
 
 	/**
@@ -173,7 +262,7 @@ class Config {
 	 */
 	async set(config) {
 		const auth =	await this.google.selectAuth()
-		const arrayValues = this.convertJsonToArray(config)
+		const arrayValues = this.convertJsonToGdrive(config)
 
 		let request = {
 			spreadsheetId: this.spreadsheetId,
@@ -208,7 +297,7 @@ class Config {
 		// const today = new Date()
 
 	// fs.writeFileSync(path.join(this.cacheDir, 'cache'), today.getTime())
-	// fs.writeFileSync(path.join(this.cacheDir, 'config.cached.json'), JSON.stringify(config))
+	// fs.writeFileSync(path.join(this.cacheDir, 'config.cached'), JSON.stringify(config))
 	}
 
 }
