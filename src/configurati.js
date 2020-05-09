@@ -25,7 +25,7 @@ class Config {
 		if (process.env.NODE_ENV === undefined) process.env.NODE_ENV = 'PRODUCTION'
 		this.logger = new Logger('configurati')
 		this.logger = this.logger.get()
-		this.crypto = new Cryptologist()
+		if (options.password) this.crypto = new Cryptologist(options.password)
 		this.type = type
 
 		this.cacheMinutes = options.cacheMinutes
