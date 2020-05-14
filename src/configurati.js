@@ -190,13 +190,12 @@ class Config {
 
 		this.logger.error('No type specified')
 
-		return {}
+		return Promise.resolve()
 	}
 
 	async getConfigFromGithubRepo() {
 		if (!this.isCacheValid()) {
-			this.logger.debug('Warn: No config cache, refreshing it')
-
+			this.logger.debug('No valid config cache, refreshing it')
 			const cacheInfo = {}
 			const gh = new GitHub({ token: this.token })
 			const contents = await gh.getRepo(this.username, this.repositoryName)
@@ -226,7 +225,7 @@ class Config {
 
 	async getConfigFromGSheets() {
 		if (!this.isCacheValid()) {
-			this.logger.debug('Warn: No config cache, refreshing it')
+			this.logger.debug('No valid config cache, refreshing it')
 			const auth =	await this.google.selectAuth()
 			const request = {
 				spreadsheetId: this.spreadsheetId,
